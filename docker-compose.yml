@@ -2,7 +2,9 @@ version: '3.8'
 
 services:
   rag-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
     container_name: campus-rag-api
     ports:
       - "8000:8000"

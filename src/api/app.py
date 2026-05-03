@@ -1,7 +1,11 @@
 """FastAPI主应用"""
 
-from fastapi import FastAPI, HTTPException
+import os
+from pathlib import Path
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from contextlib import asynccontextmanager
 from typing import Dict, Any, List, Optional
 from pydantic import BaseModel
@@ -281,3 +285,35 @@ if __name__ == "__main__":
         port=settings.app.app_port,
         reload=settings.app.app_debug,
     )
+
+
+# ========== 前端静态文件托管 ==========
+def _find_frontend_dist() -> Path | None:
+    """查找前端构建产物目录"""
+    # 优先使用环境变量
+    env_dist = os.environ.get("FRONTEND_DIST")
+    if env_dist and Path(env_dist).is_dir():
+        return Path(env_dist)
+    # 默认查找 frontend/dist
+    candidates = [
+        Path(__file__).parent.parent.parent / "frontend" / "dist",
+        Path("frontend/dist"),
+    ]
+    for p in candidates:
+        if p.is_dir():
+            return p.resolve()
+    return None
+
+
+_frontend_dist = _find_frontend_dist()
+
+if _frontend_dist:
+    app.mount("/assets", StaticFiles(directory=str(_frontend_dist / "assets")), name="static-assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_frontend(request: Request, full_path: str):
+        """托管前端SPA，所有非API路由返回index.html"""
+        file_path = _frontend_dist / full_path
+        if file_path.is_file():
+            return FileResponse(str(file_path))
+        return FileResponse(str(_frontend_dist / "index.html"))
