@@ -1,8 +1,10 @@
 """FastAPI主应用"""
 
 import os
+import shutil
+import tempfile
 from pathlib import Path
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, File, UploadFile, Form
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -257,6 +259,69 @@ async def upload_document(request: DocumentRequest):
     except Exception as e:
         logger.error(f"文档处理失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/documents/upload", response_model=DocumentResponse)
+async def upload_document_file(
+    file: UploadFile = File(...),
+    course_name: str = Form(default=""),
+    chapter: str = Form(default=""),
+    tags: str = Form(default=""),
+):
+    """文件上传接口 - 接收multipart文件"""
+    tmp_path = None
+    try:
+        parse_agent = _components.get("parse_agent")
+        retrieval_engine = _components.get("retrieval_engine")
+
+        if not parse_agent or not retrieval_engine:
+            raise HTTPException(status_code=500, detail="组件未初始化")
+
+        # 保存上传文件到临时目录
+        upload_dir = Path("data/uploads")
+        upload_dir.mkdir(parents=True, exist_ok=True)
+
+        tmp_path = upload_dir / file.filename
+        with open(tmp_path, "wb") as f:
+            shutil.copyfileobj(file.file, f)
+
+        logger.info(f"文件已保存: {tmp_path}")
+
+        # 解析tags
+        tag_list = [t.strip() for t in tags.split(",") if t.strip()] if tags else []
+
+        # 解析并索引文档
+        result = parse_agent.parse_and_index(
+            doc_path=str(tmp_path),
+            retrieval_engine=retrieval_engine,
+            course_name=course_name,
+            chapter=chapter,
+            tags=tag_list,
+        )
+
+        if not result["success"]:
+            raise HTTPException(status_code=400, detail=result.get("error", "文档处理失败"))
+
+        return DocumentResponse(
+            success=True,
+            doc_id=result["doc_id"],
+            doc_name=result["doc_name"],
+            chunks_count=result["chunks_count"],
+            message=f"文档处理成功: {result['doc_name']}",
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"文档上传处理失败: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        # 清理临时文件
+        if tmp_path and tmp_path.exists():
+            try:
+                tmp_path.unlink()
+            except OSError:
+                pass
 
 
 @app.get("/stats")

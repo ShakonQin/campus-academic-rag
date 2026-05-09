@@ -106,8 +106,8 @@ class VectorIndexBuilder:
             if hasattr(embeddings, 'tolist'):
                 embeddings = embeddings.tolist()
 
-            # 添加到集合
-            collection.add(
+            # 添加到集合（upsert: 已存在则更新，不存在则插入）
+            collection.upsert(
                 ids=ids,
                 embeddings=embeddings,
                 documents=documents,

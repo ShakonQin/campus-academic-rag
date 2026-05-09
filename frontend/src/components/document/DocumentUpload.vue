@@ -67,19 +67,14 @@ async function processFiles(files) {
 
     uploading.value = true
     uploadingName.value = file.name
-    percentage.value = 30
+    percentage.value = 10
 
     try {
-      // 读取文件为base64
-      const content = await readFileAsBase64(file)
-      percentage.value = 60
-
-      // 调用后端API上传
-      const res = await uploadDocument({
-        doc_path: file.name, // 实际场景需要上传文件到后端
-        course_name: '',
-        chapter: '',
-        tags: [],
+      // 通过FormData上传文件到后端
+      const res = await uploadDocument(file, {}, (e) => {
+        if (e.total) {
+          percentage.value = Math.min(90, Math.round((e.loaded / e.total) * 90))
+        }
       })
       percentage.value = 100
 
@@ -97,19 +92,12 @@ async function processFiles(files) {
         ElMessage.error(`${file.name} 上传失败: ${res.message || '未知错误'}`)
       }
     } catch (e) {
-      ElMessage.error(`${file.name} 上传失败`)
+      const msg = e.response?.data?.detail || e.message || '未知错误'
+      ElMessage.error(`${file.name} 上传失败: ${msg}`)
     } finally {
       uploading.value = false
     }
   }
-}
-
-function readFileAsBase64(file) {
-  return new Promise((resolve) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result)
-    reader.readAsDataURL(file)
-  })
 }
 
 defineExpose({ triggerInput })

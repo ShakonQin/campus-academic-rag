@@ -24,6 +24,7 @@ rank-bm25 = "^0.2.2"
 jieba = "^0.42.1"
 # Web框架
 fastapi = "^0.111.0"
+python-multipart = "^0.0.9"
 uvicorn = {extras = ["standard"], version = "^0.30.0"}
 pydantic = "^2.7.0"
 # LLM集成

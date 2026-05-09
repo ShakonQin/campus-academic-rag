@@ -3,6 +3,7 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional, Union
 import numpy as np
+import httpx
 
 from src.config.settings import settings
 from src.utils.logger import logger
@@ -147,6 +148,89 @@ class SentenceTransformerEmbedding(BaseEmbedding):
         return self._dimension
 
 
+class OpenAICompatibleEmbedding(BaseEmbedding):
+    """基于OpenAI兼容API的嵌入模型
+
+    支持OpenAI、智谱AI、硅基流动等提供OpenAI兼容embedding接口的服务。
+    无需本地下载模型，通过HTTP API调用。
+    """
+
+    def __init__(
+        self,
+        api_key: Optional[str] = None,
+        base_url: Optional[str] = None,
+        model: Optional[str] = None,
+        dimension: Optional[int] = None,
+    ):
+        self._api_key = api_key or settings.embedding.embedding_api_key
+        self._base_url = (base_url or settings.embedding.embedding_api_base_url).rstrip("/")
+        self._model = model or settings.embedding.embedding_api_model
+        self._dimension = dimension or settings.embedding.embedding_dimension
+
+        if not self._api_key:
+            raise ValueError(
+                "使用Embedding API模式时必须配置 EMBEDDING_API_KEY，"
+                "请在 .env 文件中设置 EMBEDDING_API_KEY"
+            )
+
+        logger.info(f"Embedding API模式: {self._base_url}, 模型: {self._model}")
+
+    def encode(
+        self,
+        texts: Union[str, List[str]],
+        **kwargs,
+    ) -> np.ndarray:
+        single = False
+        if isinstance(texts, str):
+            texts = [texts]
+            single = True
+
+        embeddings = self._call_api(texts)
+
+        if single:
+            return embeddings[0]
+        return embeddings
+
+    def _call_api(self, texts: List[str]) -> np.ndarray:
+        url = f"{self._base_url}/embeddings"
+        headers = {
+            "Authorization": f"Bearer {self._api_key}",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": self._model,
+            "input": texts,
+            "encoding_format": "float",
+        }
+
+        try:
+            with httpx.Client(timeout=60.0) as client:
+                resp = client.post(url, json=payload, headers=headers)
+                resp.raise_for_status()
+                data = resp.json()
+
+            # 按index排序，确保顺序与输入一致
+            sorted_data = sorted(data["data"], key=lambda x: x["index"])
+            embeddings = np.array([item["embedding"] for item in sorted_data], dtype=np.float32)
+
+            # 更新实际维度
+            if embeddings.ndim == 2 and embeddings.shape[1] != self._dimension:
+                logger.info(f"Embedding维度从API获取: {embeddings.shape[1]}")
+                self._dimension = embeddings.shape[1]
+
+            return embeddings
+
+        except httpx.HTTPStatusError as e:
+            logger.error(f"Embedding API请求失败: {e.response.status_code} - {e.response.text}")
+            raise
+        except Exception as e:
+            logger.error(f"Embedding API调用异常: {e}")
+            raise
+
+    def get_dimension(self) -> int:
+        return self._dimension
+
+
 class EmbeddingFactory:
     """嵌入模型工厂"""
 
@@ -163,7 +247,13 @@ class EmbeddingFactory:
             嵌入模型实例
         """
         if cls._instance is None:
-            cls._instance = SentenceTransformerEmbedding(**kwargs)
+            provider = settings.embedding.embedding_provider
+            if provider == "api":
+                logger.info("使用Embedding API模式")
+                cls._instance = OpenAICompatibleEmbedding(**kwargs)
+            else:
+                logger.info("使用本地Embedding模型模式")
+                cls._instance = SentenceTransformerEmbedding(**kwargs)
         return cls._instance
 
     @classmethod

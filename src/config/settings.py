@@ -33,7 +33,19 @@ class AppSettings(BaseSettings):
 class EmbeddingSettings(BaseSettings):
     """嵌入模型配置"""
 
-    # 模型配置
+    # 提供商: "local" (sentence-transformers) 或 "api" (OpenAI兼容API)
+    embedding_provider: str = Field(default="api", description="嵌入提供商: local/api")
+
+    # API模式配置（embedding_provider=api时使用）
+    embedding_api_key: Optional[str] = Field(default=None, description="Embedding API密钥")
+    embedding_api_base_url: str = Field(
+        default="https://api.openai.com/v1", description="Embedding API基础URL"
+    )
+    embedding_api_model: str = Field(
+        default="text-embedding-3-small", description="API Embedding模型名称"
+    )
+
+    # 本地模型配置（embedding_provider=local时使用）
     embedding_model_path: Optional[str] = Field(
         default=None, description="本地模型路径"
     )

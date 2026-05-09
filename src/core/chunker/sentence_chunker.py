@@ -281,6 +281,8 @@ class DocumentChunker:
                 for chunk in chunks:
                     chunk.metadata.chunk_index = chunk_index
                     chunk.metadata.page_number = page_num
+                    # 同步更新chunk_id，避免不同页产生重复ID
+                    chunk.chunk_id = self.sentence_chunker._generate_chunk_id(doc_id, chunk_index)
                     chunk_index += 1
 
                 all_chunks.extend(chunks)
